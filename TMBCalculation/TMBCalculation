@@ -1,4 +1,4 @@
-#!python
+#!/usr/bin/env python
 """
 This is an open source Script written by K.Z. to calculate TMB from ANNOVAR annotated files
 This scipt filters variants annotated by exac03,genomad41_exome using the user-defined Population Frequency cutoff and filters COSMIC driver mutations according to the variant population allele count
@@ -9,6 +9,7 @@ import re
 import csv
 #from collections import defaultdict
 import pandas as pd
+from io import StringIO
 
 def main():
     # Create a Custom ArgumentParser
@@ -16,16 +17,16 @@ def main():
 
     # Set Input Argument
     parser.add_argument('-sampleid', dest='sampleid', required=True, help="Sample name: EXAMPLE, if in multisample mode, this could be set as tumor name")
-    parser.add_argument('-input', dest='inputfile', required=True, help="ANNOVAR annotated VCF file: EXAMPLE.hg38_multianno.txt")
+    parser.add_argument('-input', dest='inputfile', required=True, help="TXT output of ANNOVAR annotated VCF file: EXAMPLE.hg38_multianno.txt")
     parser.add_argument('-bed', dest='bedfile', required=True, help="BED file used in exome sequencing or BED files targeting exon region that want to be used to calculate TMB")
     parser.add_argument('-annovar_db', dest='annovar_database', required=True, help="Databases used in ANNOVAR annotation, seperate using ',' and the following can be included: cosmic70,exac03,genomad41_exome")
     parser.add_argument('-tsg', dest='tsgfile', required=True, help="Tumor suppressor genes with stopgain to exlude in TMB calculation, can be downloaded from https://bioinfo.uth.edu/TSGene/Human_TSGs.txt")
     parser.add_argument('-populationfreqcutoff', dest='Population_Freq_cutoff', required=False, default=0.05, help="Population Frequency cutoff to filter in exac03,genomad41_exome, default is 0.05(5%%)")
     parser.add_argument('-cosmiccutoff', dest='COSMIC_cutoff', required=False, default=50, help="Cutoff for COSMIC driver gene count to filter in cosmic70, default is 50")
     parser.add_argument('-multisample', dest='multi_sample', required=False, default="FALSE", help="Whether the input file is merged with multiple samples, if set to TRUE, the input file must contain a column named SampleID, default is FALSE")
-    parser.add_argument("-V", "--version", action="version", version="TMB calculation Version 1.0")
+    parser.add_argument("-V", "--version", action="version", version="TMB calculation Version 1.1")
 
-    
+
     # Parse Arguments
     args = parser.parse_args()
 
@@ -36,11 +37,15 @@ def main():
     annovar_db = args.annovar_database
     tsg_filename = args.tsgfile
     Population_Freq_cutoff = args.Population_Freq_cutoff
+    Population_Freq_cutoff = float(Population_Freq_cutoff)
     COSMIC_cutoff = args.COSMIC_cutoff
+    COSMIC_cutoff = int(COSMIC_cutoff)
     multi_sample = args.multi_sample
 
     # Load all files first
-    input_file = pd.read_csv(input_filename, sep='\t', header=0,comment='##')
+    with open(input_filename, 'r') as f:
+        lines = [line for line in f if not line.startswith('##')]
+    input_file = pd.read_csv(StringIO(''.join(lines)), sep='\t', header=0)
     bed_file = pd.read_csv(bed_file_name, sep='\t', header=None,comment='#')
     # Calculate Total Chromosome length in the bed file
     bed_file = bed_file.rename(columns={0: "Chr", 1: "Start", 2: "End"})
@@ -48,7 +53,7 @@ def main():
     # print("The Total length of exon regions is: ",Exon_length)
     annovar_db_list = annovar_db.split(",")
     tsg_file = pd.read_csv(tsg_filename, sep='\t', header=0,comment='#')
-    
+
     if multi_sample == "FALSE":
         print("Running TMB Calculation in ",sample_id)
         # filter input file to exclude non-exon and exon functions unknown
@@ -65,7 +70,7 @@ def main():
                     # Extract all the numbers after "=" using regular expressions
                     if value !=  ".":
                         value = value.split("OCCURENCE=")[1]
-                        numbers = re.findall("\d+\.?\d*", value)
+                        numbers = re.findall(r"\d+\.?\d*", value)
                     else:
                         numbers = 0
 
@@ -74,7 +79,7 @@ def main():
                         sum_numbers = sum(int(num) for num in numbers)
                     else:
                         sum_numbers = 0  # In case no numbers are found
-                    
+
                     # Append the sum to the cosmic70_sum list
                     cosmic70_sum.append(sum_numbers)
 
@@ -94,17 +99,18 @@ def main():
                 input_file['gnomAD_exome_ALL'] = input_file['gnomAD_exome_ALL'].astype(float)
                 input_file = input_file[input_file['gnomAD_exome_ALL'] < Population_Freq_cutoff]
                 # print("There're ",len(input_file)," mutations left")
-        
+
         # Filter TSGs with stopgain
         tsg_gene_symbols = tsg_file["GeneSymbol"]
-        inputfile = inputfile[~((inputfile["Gene.refGene"].isin(tsg_gene_symbols)) & (inputfile["ExonicFunc.refGene"] == "stopgain"))]
+
+        input_file = input_file[~((input_file["Gene.refGene"].isin(tsg_gene_symbols)) & (input_file["ExonicFunc.refGene"] == "stopgain"))]
         # print("There're ",len(input_file)," mutations left")
 
         # Calculate final mutation count
         mut_count = len(input_file)
         print("The total filtered mutation count in ", sample_id, " is: ", mut_count)
         TMB_value = mut_count/Exon_length
-        
+
         output_filename = str(sample_id)+"_TMB.txt"
         print("Writing OutPut Files...")
         with open(output_filename, 'w', newline='', encoding='utf-8') as outputfile:
@@ -117,7 +123,7 @@ def main():
                             Exon_length,
                             mut_count,
                             TMB_value])
-    
+
     elif multi_sample == "TRUE":
         TMB_allsamples = {}
         for tmp_sampleid in input_file['SampleID'].unique():
@@ -137,7 +143,7 @@ def main():
                         # Extract all the numbers after "=" using regular expressions
                         if value !=  ".":
                             value = value.split("OCCURENCE=")[1]
-                            numbers = re.findall("\d+\.?\d*", value)
+                            numbers = re.findall(r"\d+\.?\d*", value)
                         else:
                             numbers = 0
 
@@ -146,7 +152,7 @@ def main():
                             sum_numbers = sum(int(num) for num in numbers)
                         else:
                             sum_numbers = 0  # In case no numbers are found
-                        
+
                         # Append the sum to the cosmic70_sum list
                         cosmic70_sum.append(sum_numbers)
 
@@ -168,7 +174,7 @@ def main():
                     tmp_inputfile['gnomAD_exome_ALL'] = tmp_inputfile['gnomAD_exome_ALL'].astype(float)
                     tmp_inputfile = tmp_inputfile[tmp_inputfile['gnomAD_exome_ALL'] < Population_Freq_cutoff]
                     # print("There're ",len(tmp_inputfile)," mutations left")
-            
+
             # Filter TSGs with stopgain
             # print("Removing  TSGs with stopgain...")
             tsg_gene_symbols = tsg_file["GeneSymbol"]
@@ -195,7 +201,7 @@ def main():
                 "ExonLength": Exon_length,
                 "MutCount": mut_count,
                 "TMB": TMB_value}
-        
+
         output_filename = str(sample_id)+"Samples_TMB.txt"
         print("Writing OutPut Files of All Samples")
         with open(output_filename, 'w', newline='', encoding='utf-8') as outputfile:
