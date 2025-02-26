@@ -40,7 +40,7 @@ def main():
     multi_sample = args.multi_sample
 
     # Load all files first
-    input_file = pd.read_csv(input_filename, sep='\t', header=0,comment='#')
+    input_file = pd.read_csv(input_filename, sep='\t', header=0,comment='##')
     bed_file = pd.read_csv(bed_file_name, sep='\t', header=None,comment='#')
     # Calculate Total Chromosome length in the bed file
     bed_file = bed_file.rename(columns={0: "Chr", 1: "Start", 2: "End"})
